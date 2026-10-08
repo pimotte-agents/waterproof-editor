@@ -22,7 +22,6 @@ jest.spyOn(global.console, "log").mockImplementation();
 import { WaterproofEditor } from "../src/editor";
 import {
   HistoryChange,
-  OffsetCodeAction,
   OffsetMessageSegment,
   OffsetDiagnostic,
   Severity,
@@ -185,84 +184,6 @@ describe("getPartialDiagnosticsInRange", () => {
   });
 });
 
-// ── patchDiagnosticCodeActions ────────────────────────────────────────────────
-
-describe("patchDiagnosticCodeActions", () => {
-  const actions: OffsetCodeAction[] = [
-    { title: "Fix", edits: [{ start: 0, end: 1, newText: "x" }] },
-  ];
-
-  test("merges code actions into the diagnostic at the given index when the version matches", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5)], 3);
-    expect(editor.diagnosticsVersion).toBe(1);
-
-    editor.patchDiagnosticCodeActions(3, 0, actions);
-
-    expect(editor.diagnosticsVersion).toBe(2);
-    expect(editor.getDiagnosticsInRange(0, 5)[0].codeActions).toStrictEqual(
-      actions,
-    );
-  });
-
-  test("is a no-op when index is out of bounds", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5)], 3);
-
-    // index 5 is out of bounds for a single diagnostic
-    editor.patchDiagnosticCodeActions(3, 5, actions);
-
-    expect(editor.diagnosticsVersion).toBe(1);
-    expect(editor.getDiagnosticsInRange(0, 5)[0].codeActions).toBeUndefined();
-  });
-});
-
-// ── setActiveDiagnostics: versioning of code actions ─────────────────────────
-
-describe("setActiveDiagnostics code action versioning", () => {
-  const actions: OffsetCodeAction[] = [
-    { title: "Fix", edits: [{ start: 0, end: 1, newText: "x" }] },
-  ];
-
-  test("does not carry code actions over to a later pass", () => {
-    // Carrying actions forward is the extension's job, since only it can check that
-    // the edits are still valid for the new diagnostics.
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 1);
-    editor.patchDiagnosticCodeActions(1, 0, actions);
-
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 2);
-
-    expect(editor.getDiagnosticsInRange(0, 5)[0].codeActions).toBeUndefined();
-  });
-
-  test("stamps code actions with the document version they were received at", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics(
-      [{ ...diag(0, 5), codeActions: actions }, diag(6, 8)],
-      1,
-    );
-    editor.patchDiagnosticCodeActions(1, 1, actions);
-
-    const [first, second] = editor.getDiagnosticsInRange(0, 10);
-    expect(first.codeActionsVersion).toBe(editor.documentVersion);
-    expect(second.codeActionsVersion).toBe(editor.documentVersion);
-  });
-
-  test("drops a patch computed against a version that has since been superseded", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 1);
-
-    // A new pass starts before the patch for version 1 arrives.
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 2);
-
-    // The late patch, computed against version 1, must be dropped.
-    editor.patchDiagnosticCodeActions(1, 0, actions);
-
-    expect(editor.getDiagnosticsInRange(0, 5)[0].codeActions).toBeUndefined();
-  });
-});
-
 // ── patchDiagnosticSegments ──────────────────────────────────────────────────
 
 describe("patchDiagnosticSegments", () => {
@@ -313,6 +234,18 @@ describe("patchDiagnosticSegments", () => {
     editor.patchDiagnosticSegments(3, [{ index: 4, segments }]);
 
     expect(editor.diagnosticsVersion).toBe(1);
+  });
+
+  test("does not carry segments over to a later pass", () => {
+    // Carrying segments forward is the extension's job, since only it can check that
+    // the edits are still valid for the new diagnostics.
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([diag(0, 5, "same")], 1);
+    editor.patchDiagnosticSegments(1, [{ index: 0, segments }]);
+
+    editor.setActiveDiagnostics([diag(0, 5, "same")], 2);
+
+    expect(editor.getDiagnosticsInRange(0, 5)[0].segments).toBeUndefined();
   });
 
   test("segments sent with setActiveDiagnostics are stamped with the document version", () => {

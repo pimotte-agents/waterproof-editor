@@ -224,11 +224,6 @@ export interface OffsetEdit {
    */
   oldText?: string;
 }
-export interface OffsetCodeAction {
-  title: string;
-  edits: OffsetEdit[];
-}
-
 /**
  * A piece of a diagnostic message. A segment with an `edit` is a suggestion: its text is
  * shown as a link in the message, and clicking it applies the edit.
@@ -244,7 +239,6 @@ export interface OffsetDiagnostic {
   // Offsets relative to the on-disk text document.
   startOffset: number;
   endOffset: number;
-  codeActions?: OffsetCodeAction[];
   /**
    * The message split into segments, some of which are suggestions. Concatenating the
    * segment texts gives `message`.

@@ -32,7 +32,6 @@ import {
   WaterproofEditorConfig,
   TextContentOfSpecifier,
   MessageHandlerEditor,
-  OffsetCodeAction,
   OffsetEdit,
   OffsetMessageSegment,
 } from "./api";
@@ -78,14 +77,11 @@ export type DiagnosticObjectProse = {
   start: number;
   end: number;
   severity: Severity;
-  codeActions?: OffsetCodeAction[];
-  /**
-   * The editor's document version at the time `codeActions` were received. The offsets in
-   * the code actions are only meaningful as long as the document has not changed since.
-   */
-  codeActionsVersion?: number;
   segments?: OffsetMessageSegment[];
-  /** Like `codeActionsVersion`, for the edits in `segments`. */
+  /**
+   * The editor's document version at the time `segments` were received. The offsets in
+   * their edits are only meaningful as long as the document has not changed since.
+   */
   segmentsVersion?: number;
 };
 
@@ -95,15 +91,12 @@ function toProseDiagnostic(
   end: number,
   documentVersion: number,
 ): DiagnosticObjectProse {
-  const { message, severity, codeActions, segments } = diagnostic;
+  const { message, severity, segments } = diagnostic;
   return {
     message,
     severity,
     start,
     end,
-    ...(codeActions
-      ? { codeActions, codeActionsVersion: documentVersion }
-      : {}),
     ...(segments ? { segments, segmentsVersion: documentVersion } : {}),
   };
 }
@@ -135,7 +128,7 @@ export class WaterproofEditor implements MessageHandlerEditor {
 
   /**
    * The version of the document as currently shown in the editor. It is incremented on
-   * every change to the document, and is used to tell whether code actions, whose edits
+   * every change to the document, and is used to tell whether suggestions, whose edits
    * are expressed in document offsets, still apply to the current document.
    */
   public get documentVersion(): number | undefined {
@@ -145,7 +138,7 @@ export class WaterproofEditor implements MessageHandlerEditor {
   /**
    * The (extension-side) document version that the diagnostics were computed for, as passed
    * to `setActiveDiagnostics` the last time it ran.
-   * Used by `patchDiagnosticCodeActions` to discard patches computed against a
+   * Used by `patchDiagnosticSegments` to discard patches computed against a
    * now-stale diagnostics snapshot.
    */
   private activeDiagnosticsDocVersion: number | undefined;
@@ -973,35 +966,11 @@ export class WaterproofEditor implements MessageHandlerEditor {
   }
 
   /**
-   * Merges resolved code actions into an already-stored diagnostic, streamed in
-   * separately from the initial diagnostics batch. `index` refers to the position
+   * Merges resolved message segments into already-stored diagnostics, streamed in
+   * separately from the initial diagnostics batch. Each `index` refers to the position
    * in the diagnostics array that was current when `version` was last set via
    * {@linkcode setActiveDiagnostics}; patches for a stale version are dropped.
-   */
-  public patchDiagnosticCodeActions(
-    version: number,
-    index: number,
-    codeActions: OffsetCodeAction[],
-  ) {
-    if (version !== this.activeDiagnosticsDocVersion) {
-      return;
-    }
-    const target = this.currentProseDiagnostics[index];
-
-    if (!target) return;
-
-    this.currentProseDiagnostics[index] = {
-      ...target,
-      codeActions,
-      codeActionsVersion: this._mapping?.version,
-    };
-    this.diagnosticsUpdateCounter++;
-    this.informCodemirrorViews();
-  }
-
-  /**
-   * Merges resolved message segments into already-stored diagnostics, like
-   * {@linkcode patchDiagnosticCodeActions}. An empty `segments` array removes the segments.
+   * An empty `segments` array removes the segments.
    */
   public patchDiagnosticSegments(
     version: number,

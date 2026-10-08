@@ -35,7 +35,6 @@ import { linter, LintSource, Diagnostic, lintGutter } from "@codemirror/lint";
 import { INPUT_AREA_PLUGIN_KEY } from "../inputArea";
 import {
   LanguageConfiguration,
-  OffsetCodeAction,
   OffsetMessageSegment,
   ThemeStyle,
 } from "../api";
@@ -482,7 +481,7 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
 
     if (startPos === undefined) return [];
 
-    // Code actions carry absolute document offsets, so they are only offered as long as the
+    // Suggestions carry absolute document offsets, so they are only offered as long as the
     // document has not changed since they were received.
     const documentVersion = this.editorInstance.documentVersion;
 
@@ -501,7 +500,6 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
           Math.min(d.end - startPos - 1, _view.state.doc.length),
           d.message,
           d.severity,
-          d.codeActionsVersion === documentVersion ? d.codeActions : undefined,
           d.segmentsVersion === documentVersion ? d.segments : undefined,
         );
       });
@@ -518,7 +516,6 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
    * @param to The to postion of the error (should be larger than `from`).
    * @param message The message attached to this error.
    * @param severity The severity attached to this error.
-   * @param codeActions The code actions attached to this error.
    * @param segments The message split into segments; suggestion segments are shown as links.
    */
   public preprocessDiagnostic(
@@ -526,7 +523,6 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
     to: number,
     message: string,
     severity: number,
-    codeActions?: OffsetCodeAction[],
     segments?: OffsetMessageSegment[],
   ): Diagnostic {
     const severityString = severityToString(severity);
@@ -543,22 +539,8 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
         },
       },
     ];
-
-    let trimmedMessage = "";
-
-    if (codeActions && codeActions.length > 0) {
-      for (const action of codeActions) {
-        actions.push({
-          name: `↩️ ${action.title}`,
-          apply: (_view: CodeMirror, _from: number, _to: number) => {
-            this._codemirror?.focus();
-            this.editorInstance.replaceRanges(action.edits, {
-              requireEditable: true,
-            });
-          },
-        });
-      }
-    } else if (message.startsWith("Hint, replace with: ")) {
+    let trimmedMessage: string = "";
+    if (message.startsWith("Hint, replace with: ")) {
       trimmedMessage = message
         .trim()
         .replace("Hint, replace with: ", "")

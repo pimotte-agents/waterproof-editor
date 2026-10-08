@@ -1,7 +1,6 @@
 import type { Completion } from "@codemirror/autocomplete";
 import type {
   HistoryChange,
-  OffsetCodeAction,
   OffsetDiagnostic,
   OffsetMessageSegment,
   ThemeStyle,
@@ -36,11 +35,6 @@ export interface MessageHandlerEditor {
   startSpinner: () => void;
   stopSpinner: () => void;
   updateNodeViewThemes: (theme: ThemeStyle) => void;
-  patchDiagnosticCodeActions(
-    version: number,
-    index: number,
-    codeActions: OffsetCodeAction[],
-  ): void;
   patchDiagnosticSegments(
     version: number,
     patches: Array<{ index: number; segments: OffsetMessageSegment[] }>,
