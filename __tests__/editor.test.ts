@@ -23,6 +23,7 @@ import { WaterproofEditor } from "../src/editor";
 import {
   HistoryChange,
   OffsetCodeAction,
+  OffsetMessageSegment,
   OffsetDiagnostic,
   Severity,
   ThemeStyle,
@@ -259,6 +260,68 @@ describe("setActiveDiagnostics code action versioning", () => {
     editor.patchDiagnosticCodeActions(1, 0, actions);
 
     expect(editor.getDiagnosticsInRange(0, 5)[0].codeActions).toBeUndefined();
+  });
+});
+
+// ── patchDiagnosticSegments ──────────────────────────────────────────────────
+
+describe("patchDiagnosticSegments", () => {
+  const segments: OffsetMessageSegment[] = [
+    { text: "Try " },
+    { text: "x", edit: { start: 0, end: 1, newText: "x" } },
+  ];
+
+  test("merges segments into the diagnostics at the given indices", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([diag(0, 5), diag(6, 8)], 3);
+
+    editor.patchDiagnosticSegments(3, [{ index: 1, segments }]);
+
+    expect(editor.diagnosticsVersion).toBe(2);
+    const [first, second] = editor.getDiagnosticsInRange(0, 10);
+    expect(first.segments).toBeUndefined();
+    expect(second.segments).toStrictEqual(segments);
+    expect(second.segmentsVersion).toBe(editor.documentVersion);
+  });
+
+  test("an empty segments array removes the segments", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([{ ...diag(0, 5), segments }], 3);
+
+    editor.patchDiagnosticSegments(3, [{ index: 0, segments: [] }]);
+
+    const [first] = editor.getDiagnosticsInRange(0, 5);
+    expect(first.segments).toBeUndefined();
+    expect(first.segmentsVersion).toBeUndefined();
+  });
+
+  test("drops patches for a superseded version", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([diag(0, 5)], 1);
+    editor.setActiveDiagnostics([diag(0, 5)], 2);
+
+    editor.patchDiagnosticSegments(1, [{ index: 0, segments }]);
+
+    expect(editor.diagnosticsVersion).toBe(2);
+    expect(editor.getDiagnosticsInRange(0, 5)[0].segments).toBeUndefined();
+  });
+
+  test("is a no-op when all indices are out of bounds", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([diag(0, 5)], 3);
+
+    editor.patchDiagnosticSegments(3, [{ index: 4, segments }]);
+
+    expect(editor.diagnosticsVersion).toBe(1);
+  });
+
+  test("segments sent with setActiveDiagnostics are stamped with the document version", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([{ ...diag(0, 5), segments }], 1);
+
+    const [first] = editor.getDiagnosticsInRange(0, 5);
+    expect(first.segments).toStrictEqual(segments);
+    expect(first.segmentsVersion).toBe(editor.documentVersion);
   });
 });
 

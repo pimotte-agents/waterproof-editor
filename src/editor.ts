@@ -34,6 +34,7 @@ import {
   MessageHandlerEditor,
   OffsetCodeAction,
   OffsetEdit,
+  OffsetMessageSegment,
 } from "./api";
 import { CODE_PLUGIN_KEY, codePlugin } from "./codeview";
 import { createHintPlugin } from "./hinting";
@@ -83,6 +84,9 @@ export type DiagnosticObjectProse = {
    * the code actions are only meaningful as long as the document has not changed since.
    */
   codeActionsVersion?: number;
+  segments?: OffsetMessageSegment[];
+  /** Like `codeActionsVersion`, for the edits in `segments`. */
+  segmentsVersion?: number;
 };
 
 function toProseDiagnostic(
@@ -91,7 +95,7 @@ function toProseDiagnostic(
   end: number,
   documentVersion: number,
 ): DiagnosticObjectProse {
-  const { message, severity, codeActions } = diagnostic;
+  const { message, severity, codeActions, segments } = diagnostic;
   return {
     message,
     severity,
@@ -100,6 +104,7 @@ function toProseDiagnostic(
     ...(codeActions
       ? { codeActions, codeActionsVersion: documentVersion }
       : {}),
+    ...(segments ? { segments, segmentsVersion: documentVersion } : {}),
   };
 }
 
@@ -988,6 +993,33 @@ export class WaterproofEditor implements MessageHandlerEditor {
       codeActions,
       codeActionsVersion: this._mapping?.version,
     };
+    this.diagnosticsUpdateCounter++;
+    this.informCodemirrorViews();
+  }
+
+  /**
+   * Merges resolved message segments into already-stored diagnostics, like
+   * {@linkcode patchDiagnosticCodeActions}. An empty `segments` array removes the segments.
+   */
+  public patchDiagnosticSegments(
+    version: number,
+    patches: Array<{ index: number; segments: OffsetMessageSegment[] }>,
+  ) {
+    if (version !== this.activeDiagnosticsDocVersion) {
+      return;
+    }
+    let changed = false;
+    for (const { index, segments } of patches) {
+      const target = this.currentProseDiagnostics[index];
+      if (!target) continue;
+      const { segments: _old, segmentsVersion: _oldVersion, ...rest } = target;
+      this.currentProseDiagnostics[index] =
+        segments.length > 0
+          ? { ...rest, segments, segmentsVersion: this._mapping?.version }
+          : rest;
+      changed = true;
+    }
+    if (!changed) return;
     this.diagnosticsUpdateCounter++;
     this.informCodemirrorViews();
   }

@@ -3,6 +3,7 @@ import type {
   HistoryChange,
   OffsetCodeAction,
   OffsetDiagnostic,
+  OffsetMessageSegment,
   ThemeStyle,
 } from "./types";
 import type { InputAreaStatus } from "./InputAreaStatus";
@@ -39,5 +40,9 @@ export interface MessageHandlerEditor {
     version: number,
     index: number,
     codeActions: OffsetCodeAction[],
+  ): void;
+  patchDiagnosticSegments(
+    version: number,
+    patches: Array<{ index: number; segments: OffsetMessageSegment[] }>,
   ): void;
 }

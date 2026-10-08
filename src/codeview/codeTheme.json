@@ -44,6 +44,21 @@
 	  "marginBottom": "0"
 	},
 
+	".cm-diagnosticSuggestion": {
+	  "color": "var(--wp-textLinkForeground)",
+	  "cursor": "pointer",
+	  "textDecoration": "underline dotted",
+	  "fontFamily": "var(--wp-editorFontFamily)"
+	},
+
+	".cm-diagnosticSuggestion:hover": {
+	  "textDecoration": "underline"
+	},
+
+	".cm-diagnosticSuggestion:focus-visible": {
+	  "textDecoration": "underline"
+	},
+
 	".cm-content": {
 	  "caretColor": "auto",
 	  "fontFamily": "var(--wp-editorFontFamily)",

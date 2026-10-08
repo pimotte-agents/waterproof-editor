@@ -229,6 +229,15 @@ export interface OffsetCodeAction {
   edits: OffsetEdit[];
 }
 
+/**
+ * A piece of a diagnostic message. A segment with an `edit` is a suggestion: its text is
+ * shown as a link in the message, and clicking it applies the edit.
+ */
+export interface OffsetMessageSegment {
+  text: string;
+  edit?: OffsetEdit;
+}
+
 export interface OffsetDiagnostic {
   message: string;
   severity: Severity;
@@ -236,6 +245,11 @@ export interface OffsetDiagnostic {
   startOffset: number;
   endOffset: number;
   codeActions?: OffsetCodeAction[];
+  /**
+   * The message split into segments, some of which are suggestions. Concatenating the
+   * segment texts gives `message`.
+   */
+  segments?: OffsetMessageSegment[];
 }
 
 export enum ThemeStyle {

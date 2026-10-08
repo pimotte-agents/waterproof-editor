@@ -212,6 +212,123 @@ test("code actions are only offered while the document is unchanged since they a
   expect(lint()).toStrictEqual(["📋"]);
 });
 
+describe("message segments", () => {
+  const edit = { start: 0, end: 4, newText: "We apply h", oldText: "Qed." };
+  const segments = [
+    { text: "Help\n  • " },
+    { text: "We apply h", edit },
+    { text: "\n  done" },
+  ];
+
+  function makeSegmentView(editorInstance: object) {
+    return new CodeBlockView(
+      node,
+      //@ts-expect-error For test setup supply only the minimal needed editor API
+      { editable: true },
+      editorInstance,
+      () => undefined,
+      null,
+      [],
+      [],
+      ThemeStyle.Light,
+    );
+  }
+
+  const render = (diagnostic: { renderMessage?: unknown }) =>
+    (diagnostic.renderMessage as () => HTMLElement)();
+
+  test("renders suggestion segments as links in the message", () => {
+    const nodeview = makeSegmentView({ replaceRanges: jest.fn() });
+
+    const result = nodeview.preprocessDiagnostic(
+      docStart,
+      docEnd,
+      "Help\n  • We apply h\n  done",
+      Severity.Information,
+      undefined,
+      segments,
+    );
+
+    const element = render(result);
+    expect(element.textContent).toBe("Help\n  • We apply h\n  done");
+    const links = element.querySelectorAll(".cm-diagnosticSuggestion");
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe("We apply h");
+    expect(links[0].getAttribute("role")).toBe("button");
+    // The plain message is kept, e.g. for the copy action.
+    expect(result.message).toBe("Help\n  • We apply h\n  done");
+    expect(result.actions?.map((action) => action.name)).toStrictEqual(["📋"]);
+  });
+
+  test("clicking a suggestion applies its edit", () => {
+    const replaceRanges = jest.fn();
+    const nodeview = makeSegmentView({ replaceRanges });
+    const result = nodeview.preprocessDiagnostic(
+      docStart,
+      docEnd,
+      "Help",
+      Severity.Information,
+      undefined,
+      segments,
+    );
+
+    const link = render(result).querySelector<HTMLElement>(
+      ".cm-diagnosticSuggestion",
+    )!;
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    link.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+    expect(replaceRanges).toHaveBeenCalledTimes(2);
+    expect(replaceRanges).toHaveBeenCalledWith([edit], {
+      requireEditable: true,
+    });
+  });
+
+  test("does not use a custom renderer when no segment is a suggestion", () => {
+    const nodeview = makeSegmentView({ replaceRanges: jest.fn() });
+    const result = nodeview.preprocessDiagnostic(
+      docStart,
+      docEnd,
+      "Help",
+      Severity.Information,
+      undefined,
+      [{ text: "Help" }],
+    );
+
+    expect(result.renderMessage).toBeUndefined();
+  });
+
+  test("suggestions are only offered while the document is unchanged since they arrived", () => {
+    const editorInstance = {
+      documentVersion: 5,
+      diagnosticsVersion: 1,
+      getPartialDiagnosticsInRange: () => [
+        {
+          start: 1,
+          end: 1 + docEnd,
+          message: "Help\n  • We apply h\n  done",
+          severity: Severity.Information,
+          segments,
+          segmentsVersion: 5,
+        },
+      ],
+    };
+    const nodeview = makeSegmentView(editorInstance);
+    //@ts-expect-error private; position the code block at the start of the document
+    nodeview._getPos = () => 0;
+    const lint = () =>
+      //@ts-expect-error private
+      nodeview.lintingFunction(nodeview._codemirror)[0];
+
+    expect(lint().renderMessage).toBeDefined();
+
+    // The document changed after the segments were received: their offsets are stale.
+    editorInstance.documentVersion = 6;
+    expect(lint().renderMessage).toBeUndefined();
+    expect(lint().message).toBe("Help\n  • We apply h\n  done");
+  });
+});
+
 test("Severity to string", () => {
   expect(severityToString(Severity.Error)).toStrictEqual("error");
   expect(severityToString(Severity.Information)).toStrictEqual("info");
