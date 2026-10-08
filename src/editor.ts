@@ -716,21 +716,6 @@ export class WaterproofEditor implements MessageHandlerEditor {
     if (!this._view || !this._mapping) return false;
     if (edits.length === 0) return false;
 
-    if (edits.some((edit) => edit.oldText !== undefined)) {
-      const text = this.serializeDocument() ?? "";
-      const stale = edits.find(
-        (edit) =>
-          edit.oldText !== undefined &&
-          text.slice(edit.start, edit.end) !== edit.oldText,
-      );
-      if (stale) {
-        console.warn(
-          "Not applying edits: the document no longer matches the text they were computed for.",
-        );
-        return false;
-      }
-    }
-
     // textOffsetToPmIndex can throw
     try {
       const positionedEdits = edits
@@ -738,11 +723,28 @@ export class WaterproofEditor implements MessageHandlerEditor {
           from: this._mapping!.textOffsetToPmIndex(edit.start),
           to: this._mapping!.textOffsetToPmIndex(edit.end),
           text: edit.newText,
+          oldText: edit.oldText,
           index,
         }))
         .sort((a, b) => b.from - a.from || b.to - a.to || b.index - a.index);
 
       const state = this._view.state;
+
+      // Compare against the editor's own content at the mapped positions rather than the
+      // serialized document: serialization does not reproduce the file exactly (e.g. the Lean
+      // serializer writes a placeholder title), which would shift the offsets. An edit that
+      // spans several blocks never matches, since the block delimiters are not in the content.
+      const stale = positionedEdits.find(
+        (edit) =>
+          edit.oldText !== undefined &&
+          state.doc.textBetween(edit.from, edit.to) !== edit.oldText,
+      );
+      if (stale) {
+        console.warn(
+          "Not applying edits: the document no longer matches the text they were computed for.",
+        );
+        return false;
+      }
       if (
         options.requireEditable &&
         !positionedEdits.every(

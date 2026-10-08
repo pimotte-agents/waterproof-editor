@@ -288,6 +288,25 @@ describe("replaceRanges guards against stale or forbidden edits", () => {
     expect(editor.serializeDocument()).toBe(before.replace("help", "exact h"));
   });
 
+  test("checks oldText against the editor content, not the serialized document", () => {
+    // Serialization does not have to reproduce the file exactly: the Lean serializer writes
+    // a placeholder document title, which shifts every offset after it.
+    const editor = makeEditor(helpSource);
+    const before = editor.serializeDocument()!;
+    const start = before.indexOf("help");
+    const serialize = jest
+      .spyOn(editor, "serializeDocument")
+      .mockReturnValue("a longer title\n" + before);
+
+    const ok = editor.replaceRanges([
+      { start, end: start + 4, newText: "exact h", oldText: "help" },
+    ]);
+
+    serialize.mockRestore();
+    expect(ok).toBe(true);
+    expect(editor.serializeDocument()).toBe(before.replace("help", "exact h"));
+  });
+
   test("refuses an edit computed before an earlier change shifted the text", () => {
     const editor = makeEditor(helpSource);
     const before = editor.serializeDocument()!;
