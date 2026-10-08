@@ -482,8 +482,8 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
     if (startPos === undefined) return [];
 
     // Suggestions carry absolute document offsets, so they are only offered as long as the
-    // document has not changed since they were received.
-    const documentVersion = this.editorInstance.documentVersion;
+    // document has not changed since the diagnostics were computed.
+    const offerSuggestions = this.editorInstance.diagnosticsMatchDocument;
 
     // We use the outer editor instance to query for diagnostics in the range of this codemirror instance.
     const diags = this.editorInstance
@@ -500,7 +500,7 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
           Math.min(d.end - startPos - 1, _view.state.doc.length),
           d.message,
           d.severity,
-          d.segmentsVersion === documentVersion ? d.segments : undefined,
+          offerSuggestions ? d.segments : undefined,
         );
       });
 
@@ -603,7 +603,8 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
       ];
     }
 
-    const hasSuggestions = segments?.some((segment) => segment.edit) ?? false;
+    const hasSuggestions =
+      segments?.some((segment) => this.canApplySuggestion(segment)) ?? false;
 
     return {
       from,
@@ -617,39 +618,38 @@ export class CodeBlockView extends EmbeddedCodeMirrorEditor {
     };
   }
 
+  private canApplySuggestion(
+    segment: OffsetMessageSegment,
+  ): segment is Required<OffsetMessageSegment> {
+    return (
+      segment.edit !== undefined &&
+      this.editorInstance.canApplyEdit(segment.edit, { requireEditable: true })
+    );
+  }
+
   /**
-   * Renders a diagnostic message from its segments, with each suggestion as a link that
-   * applies its edit.
+   * Renders a diagnostic message from its segments, with each suggestion that can be applied
+   * as a link that applies its edit.
    */
   private renderSegments(segments: OffsetMessageSegment[]): HTMLElement {
     const container = document.createElement("span");
     for (const segment of segments) {
-      const edit = segment.edit;
-      if (!edit) {
+      if (!this.canApplySuggestion(segment)) {
         container.append(segment.text);
         continue;
       }
-      const link = document.createElement("span");
+      const { edit } = segment;
+      const link = document.createElement("button");
+      link.type = "button";
       link.className = "cm-diagnosticSuggestion";
       link.textContent = segment.text;
       link.title = "Apply suggestion";
-      link.setAttribute("role", "button");
-      link.tabIndex = 0;
-      const apply = () => {
-        this._codemirror?.focus();
-        this.editorInstance.replaceRanges([edit], { requireEditable: true });
-      };
       // Keep the focus in the code block, so the tooltip doesn't close before the click.
       link.addEventListener("mousedown", (e) => e.preventDefault());
       link.addEventListener("click", (e) => {
         e.preventDefault();
-        apply();
-      });
-      link.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          apply();
-        }
+        this._codemirror?.focus();
+        this.editorInstance.applyEdit(edit, { requireEditable: true });
       });
       container.append(link);
     }

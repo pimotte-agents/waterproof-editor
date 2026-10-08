@@ -1,10 +1,5 @@
 import type { Completion } from "@codemirror/autocomplete";
-import type {
-  HistoryChange,
-  OffsetDiagnostic,
-  OffsetMessageSegment,
-  ThemeStyle,
-} from "./types";
+import type { HistoryChange, OffsetDiagnostic, ThemeStyle } from "./types";
 import type { InputAreaStatus } from "./InputAreaStatus";
 
 /**
@@ -35,8 +30,4 @@ export interface MessageHandlerEditor {
   startSpinner: () => void;
   stopSpinner: () => void;
   updateNodeViewThemes: (theme: ThemeStyle) => void;
-  patchDiagnosticSegments(
-    version: number,
-    patches: Array<{ index: number; segments: OffsetMessageSegment[] }>,
-  ): void;
 }

@@ -184,124 +184,80 @@ describe("getPartialDiagnosticsInRange", () => {
   });
 });
 
-// ── patchDiagnosticSegments ──────────────────────────────────────────────────
+// ── message segments ─────────────────────────────────────────────────────────
 
-describe("patchDiagnosticSegments", () => {
+describe("diagnostics with message segments", () => {
   const segments: OffsetMessageSegment[] = [
     { text: "Try " },
     { text: "x", edit: { start: 0, end: 1, newText: "x" } },
   ];
 
-  test("merges segments into the diagnostics at the given indices", () => {
+  test("keeps the segments sent with setActiveDiagnostics", () => {
     const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5), diag(6, 8)], 3);
+    editor.setActiveDiagnostics([{ ...diag(0, 5), segments }, diag(6, 8)], 1);
 
-    editor.patchDiagnosticSegments(3, [{ index: 1, segments }]);
-
-    expect(editor.diagnosticsVersion).toBe(2);
     const [first, second] = editor.getDiagnosticsInRange(0, 10);
-    expect(first.segments).toBeUndefined();
-    expect(second.segments).toStrictEqual(segments);
-    expect(second.segmentsVersion).toBe(editor.documentVersion);
+    expect(first.segments).toStrictEqual(segments);
+    expect(second.segments).toBeUndefined();
   });
 
-  test("an empty segments array removes the segments", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([{ ...diag(0, 5), segments }], 3);
-
-    editor.patchDiagnosticSegments(3, [{ index: 0, segments: [] }]);
-
-    const [first] = editor.getDiagnosticsInRange(0, 5);
-    expect(first.segments).toBeUndefined();
-    expect(first.segmentsVersion).toBeUndefined();
-  });
-
-  test("drops patches for a superseded version", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5)], 1);
-    editor.setActiveDiagnostics([diag(0, 5)], 2);
-
-    editor.patchDiagnosticSegments(1, [{ index: 0, segments }]);
-
-    expect(editor.diagnosticsVersion).toBe(2);
-    expect(editor.getDiagnosticsInRange(0, 5)[0].segments).toBeUndefined();
-  });
-
-  test("is a no-op when all indices are out of bounds", () => {
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5)], 3);
-
-    editor.patchDiagnosticSegments(3, [{ index: 4, segments }]);
-
-    expect(editor.diagnosticsVersion).toBe(1);
-  });
-
-  test("does not carry segments over to a later pass", () => {
-    // Carrying segments forward is the extension's job, since only it can check that
-    // the edits are still valid for the new diagnostics.
-    const editor = makeEditor();
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 1);
-    editor.patchDiagnosticSegments(1, [{ index: 0, segments }]);
-
-    editor.setActiveDiagnostics([diag(0, 5, "same")], 2);
-
-    expect(editor.getDiagnosticsInRange(0, 5)[0].segments).toBeUndefined();
-  });
-
-  test("segments sent with setActiveDiagnostics are stamped with the document version", () => {
+  test("a later message replaces the segments", () => {
     const editor = makeEditor();
     editor.setActiveDiagnostics([{ ...diag(0, 5), segments }], 1);
 
-    const [first] = editor.getDiagnosticsInRange(0, 5);
-    expect(first.segments).toStrictEqual(segments);
-    expect(first.segmentsVersion).toBe(editor.documentVersion);
+    editor.setActiveDiagnostics([diag(0, 5)], 1);
+
+    expect(editor.getDiagnosticsInRange(0, 5)[0].segments).toBeUndefined();
+  });
+
+  test("the diagnostics match the document only while its version is the one they were computed for", () => {
+    const editor = makeEditor();
+    expect(editor.diagnosticsMatchDocument).toBe(false);
+
+    editor.setActiveDiagnostics([diag(0, 5)], 1);
+    expect(editor.diagnosticsMatchDocument).toBe(true);
+
+    editor.replaceRange(1, 6, "Hi");
+    expect(editor.diagnosticsMatchDocument).toBe(false);
+
+    editor.setActiveDiagnostics([diag(0, 5)], 2);
+    expect(editor.diagnosticsMatchDocument).toBe(true);
+  });
+
+  test("diagnostics without a version never match the document", () => {
+    const editor = makeEditor();
+    editor.setActiveDiagnostics([diag(0, 5)]);
+    expect(editor.diagnosticsMatchDocument).toBe(false);
   });
 });
 
-describe("replaceRanges", () => {
-  test("edits computed against one snapshot land correctly regardless of edits array order", () => {
+describe("applyEdit", () => {
+  test("applies an edit at the mapped positions", () => {
     const editor = makeEditor();
     const before = editor.serializeDocument();
     expect(before).toContain("Hello world.");
 
-    // "Hello" -> pm 1..6, "world" -> pm 7..12 (pm pos 0 is before the code
-    // node opens, pos 1 is the first character, given the identity mapping).
-    const ok = editor.replaceRanges([
-      { start: 1, end: 6, newText: "Hi" },
-      { start: 7, end: 12, newText: "WATERPROOF" },
-    ]);
+    // "Hello" -> pm 1..6 (pm pos 0 is before the code node opens, pos 1 is the first
+    // character, given the identity mapping).
+    const ok = editor.applyEdit({ start: 1, end: 6, newText: "Hi" });
 
     expect(ok).toBe(true);
     expect(editor.serializeDocument()).toBe(
-      before!.replace("Hello world.", "Hi WATERPROOF."),
+      before!.replace("Hello world.", "Hi world."),
     );
   });
 
-  test("multiple edits from replaceRanges undo as a single step", () => {
-    const editor = makeEditor();
-    const before = editor.serializeDocument();
-
-    editor.replaceRanges([
-      { start: 7, end: 12, newText: "WATERPROOF" },
-      { start: 1, end: 6, newText: "Hi" },
-    ]);
-    expect(editor.serializeDocument()).toBe(
-      before!.replace("Hello world.", "Hi WATERPROOF."),
-    );
-
-    editor.handleHistoryChange(HistoryChange.Undo);
-
-    expect(editor.serializeDocument()).toBe(before);
-  });
-
-  test("returns false and does not dispatch when given an empty edits array", () => {
+  test("refuses an edit whose oldText does not match, without dispatching", () => {
     const editor = makeEditor();
     const before = editor.serializeDocument();
     // @ts-expect-error private field, used only to spy on the real view's dispatch
     const dispatchSpy = jest.spyOn(editor._view, "dispatch");
-    expect(editor.replaceRanges([])).toBe(false);
-    expect(dispatchSpy).not.toHaveBeenCalled();
 
+    const edit = { start: 1, end: 6, newText: "Hi", oldText: "Howdy" };
+    expect(editor.canApplyEdit(edit)).toBe(false);
+    expect(editor.applyEdit(edit)).toBe(false);
+
+    expect(dispatchSpy).not.toHaveBeenCalled();
     expect(editor.serializeDocument()).toBe(before);
   });
 });
@@ -328,11 +284,9 @@ describe("methods with no view initialised", () => {
     expect(makeUninitializedEditor().replaceRange(0, 5, "x")).toBe(false);
   });
 
-  test("replaceRanges returns false", () => {
+  test("applyEdit returns false", () => {
     expect(
-      makeUninitializedEditor().replaceRanges([
-        { start: 0, end: 5, newText: "x" },
-      ]),
+      makeUninitializedEditor().applyEdit({ start: 0, end: 5, newText: "x" }),
     ).toBe(false);
   });
 

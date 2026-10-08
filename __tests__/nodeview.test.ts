@@ -83,11 +83,17 @@ describe("message segments", () => {
     );
   }
 
+  /** An editor on which every edit can be applied, unless `canApplyEdit` is overridden. */
+  const makeEditorInstance = () => ({
+    applyEdit: jest.fn(() => true),
+    canApplyEdit: jest.fn(() => true),
+  });
+
   const render = (diagnostic: { renderMessage?: unknown }) =>
     (diagnostic.renderMessage as () => HTMLElement)();
 
-  test("renders suggestion segments as links in the message", () => {
-    const nodeview = makeSegmentView({ replaceRanges: jest.fn() });
+  test("renders suggestion segments as buttons in the message", () => {
+    const nodeview = makeSegmentView(makeEditorInstance());
 
     const result = nodeview.preprocessDiagnostic(
       docStart,
@@ -102,15 +108,15 @@ describe("message segments", () => {
     const links = element.querySelectorAll(".cm-diagnosticSuggestion");
     expect(links).toHaveLength(1);
     expect(links[0].textContent).toBe("We apply h");
-    expect(links[0].getAttribute("role")).toBe("button");
+    expect(links[0].tagName).toBe("BUTTON");
     // The plain message is kept, e.g. for the copy action.
     expect(result.message).toBe("Help\n  • We apply h\n  done");
     expect(result.actions?.map((action) => action.name)).toStrictEqual(["📋"]);
   });
 
   test("clicking a suggestion applies its edit", () => {
-    const replaceRanges = jest.fn();
-    const nodeview = makeSegmentView({ replaceRanges });
+    const editorInstance = makeEditorInstance();
+    const nodeview = makeSegmentView(editorInstance);
     const result = nodeview.preprocessDiagnostic(
       docStart,
       docEnd,
@@ -119,20 +125,37 @@ describe("message segments", () => {
       segments,
     );
 
-    const link = render(result).querySelector<HTMLElement>(
-      ".cm-diagnosticSuggestion",
-    )!;
-    link.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    link.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    render(result)
+      .querySelector<HTMLElement>(".cm-diagnosticSuggestion")!
+      .click();
 
-    expect(replaceRanges).toHaveBeenCalledTimes(2);
-    expect(replaceRanges).toHaveBeenCalledWith([edit], {
+    expect(editorInstance.applyEdit).toHaveBeenCalledTimes(1);
+    expect(editorInstance.applyEdit).toHaveBeenCalledWith(edit, {
+      requireEditable: true,
+    });
+  });
+
+  test("shows a suggestion that can't be applied as plain text", () => {
+    const editorInstance = makeEditorInstance();
+    editorInstance.canApplyEdit.mockReturnValue(false);
+    const nodeview = makeSegmentView(editorInstance);
+
+    const result = nodeview.preprocessDiagnostic(
+      docStart,
+      docEnd,
+      "Help",
+      Severity.Information,
+      segments,
+    );
+
+    expect(result.renderMessage).toBeUndefined();
+    expect(editorInstance.canApplyEdit).toHaveBeenCalledWith(edit, {
       requireEditable: true,
     });
   });
 
   test("does not use a custom renderer when no segment is a suggestion", () => {
-    const nodeview = makeSegmentView({ replaceRanges: jest.fn() });
+    const nodeview = makeSegmentView(makeEditorInstance());
     const result = nodeview.preprocessDiagnostic(
       docStart,
       docEnd,
@@ -144,9 +167,10 @@ describe("message segments", () => {
     expect(result.renderMessage).toBeUndefined();
   });
 
-  test("suggestions are only offered while the document is unchanged since they arrived", () => {
+  test("suggestions are only offered while the diagnostics match the document", () => {
     const editorInstance = {
-      documentVersion: 5,
+      ...makeEditorInstance(),
+      diagnosticsMatchDocument: true,
       diagnosticsVersion: 1,
       getPartialDiagnosticsInRange: () => [
         {
@@ -155,7 +179,6 @@ describe("message segments", () => {
           message: "Help\n  • We apply h\n  done",
           severity: Severity.Information,
           segments,
-          segmentsVersion: 5,
         },
       ],
     };
@@ -168,8 +191,8 @@ describe("message segments", () => {
 
     expect(lint().renderMessage).toBeDefined();
 
-    // The document changed after the segments were received: their offsets are stale.
-    editorInstance.documentVersion = 6;
+    // The document changed after the diagnostics were computed: their offsets are stale.
+    editorInstance.diagnosticsMatchDocument = false;
     expect(lint().renderMessage).toBeUndefined();
     expect(lint().message).toBe("Help\n  • We apply h\n  done");
   });
