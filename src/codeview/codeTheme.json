@@ -59,6 +59,10 @@
 	  "textDecoration": "underline"
 	},
 
+	".cm-panel.cm-panel-lint ul [aria-selected] .cm-diagnosticSuggestion": {
+	  "color": "inherit"
+	},
+
 	".cm-content": {
 	  "caretColor": "auto",
 	  "fontFamily": "var(--wp-editorFontFamily)",
