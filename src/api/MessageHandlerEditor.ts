@@ -9,7 +9,7 @@ import type { InputAreaStatus } from "./InputAreaStatus";
  * messages to an editor instance and should depend on the editor's public API.
  */
 export interface MessageHandlerEditor {
-  init: (value: string, version: number, force?: boolean) => void;
+  init: (value: string, version: number) => void;
   freeze: () => void;
   insertSymbol: (symbolUnicode: string) => boolean;
   handleSnippet: (template: string) => void;
@@ -20,7 +20,6 @@ export interface MessageHandlerEditor {
   setShowMenuItems: (show: boolean) => void;
   handleHistoryChange: (historyChange: HistoryChange) => void;
   setTeacherMode: (teacherModeEnabled: boolean) => void;
-  refreshDocument: (content: string, version: number) => void;
   removeBusyIndicators: () => void;
   reportProgress: (at: number, numberOfLines: number, label: string) => void;
   setBusyIndicator: (from: number) => void;

@@ -86,15 +86,25 @@ describe("freeze", () => {
 });
 
 describe("init", () => {
-  test("is skipped for the same version unless forced", () => {
+  test("replaces the content, also for the same version", () => {
     const editor = makeEditor();
     const other = source.replace("world.", "there.");
 
     editor.init(other, 1);
-    expect(editor.serializeDocument()).toBe(source);
 
-    editor.init(other, 1, true);
     expect(editor.serializeDocument()).toBe(other);
+  });
+
+  test("keeps the progress bar", () => {
+    const editor = makeEditor();
+    const parent = viewOf(editor).dom.parentElement!;
+    document.body.appendChild(parent);
+    expect(parent.querySelectorAll(".progress-bar").length).toBe(1);
+
+    editor.init(source, 2);
+
+    expect(parent.querySelectorAll(".progress-bar").length).toBe(1);
+    parent.remove();
   });
 
   test("lifts a freeze", () => {
@@ -102,7 +112,7 @@ describe("init", () => {
     const editor = makeEditor(documentChange);
     editor.freeze();
 
-    editor.init(source, 2, true);
+    editor.init(source, 2);
 
     expect(editor.isFrozen).toBe(false);
     const start = source.indexOf("world.");
@@ -124,7 +134,7 @@ describe("init", () => {
     );
 
     // Rebuild the view; the cursor stays at the same text offset.
-    editor.init(source, 2, true);
+    editor.init(source, 2);
 
     const newView = viewOf(editor);
     expect(newView).not.toBe(view);
@@ -139,7 +149,7 @@ describe("init", () => {
     const editor = makeEditor();
     const oldDom = viewOf(editor).dom;
     const parent = oldDom.parentElement!;
-    editor.init(source, 2, true);
+    editor.init(source, 2);
     expect(parent.contains(oldDom)).toBe(false);
     expect(parent.contains(viewOf(editor).dom)).toBe(true);
   });

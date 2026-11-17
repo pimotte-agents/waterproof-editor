@@ -183,20 +183,16 @@ export class WaterproofEditor implements MessageHandlerEditor {
   /**
    * Show `content`, building a new ProseMirror view. This also lifts a {@linkcode freeze}.
    *
-   * When a view exists already, the cursor and the scroll position are kept (as far as they
-   * still exist in the new content), but the undo history is cleared.
+   * When a view exists already, it is replaced: the cursor and the scroll position are kept (as
+   * far as they still exist in the new content), but the undo history is cleared.
    * @param content The content of the document.
    * @param version The version of the document that `content` belongs to.
-   * @param force Rebuild the view even when `version` equals the version of the current
-   *   content. By default this is skipped, assuming the view shows that version already.
    */
-  init(content: string, version: number = 1, force = false) {
+  init(content: string, version: number = 1) {
     let position: ViewPosition | undefined;
     if (this._view) {
-      if (!force && this._mapping?.version == version) return;
       position = this.viewPosition();
-      // Hack to forcefully remove the 'old' menubar
-      document.querySelector(".progress-bar")?.remove();
+      // Destroying the view also removes the DOM of its plugins, such as the menubar.
       this._view.destroy();
       this._view.dom.remove();
     }
@@ -221,32 +217,6 @@ export class WaterproofEditor implements MessageHandlerEditor {
     // notify host that the editor is ready
     console.log("Editor ready, notifying extension");
     this._editorConfig.api.editorReady();
-  }
-
-  refreshDocument(content: string, version: number = 1) {
-    if (!this._view) return;
-    if (this._mapping?.version == version) return;
-
-    const blocks = this._editorConfig.documentConstructor(content);
-    const proseDoc = constructDocument(blocks);
-
-    this._mapping = new Mapping(
-      blocks,
-      version,
-      this._editorConfig.tagConfiguration,
-      this._serializer,
-    );
-    const newState = EditorState.create({
-      doc: proseDoc,
-      plugins: this._view.state.plugins,
-      schema: WaterproofSchema,
-    });
-
-    this._view.updateState(newState);
-
-    /** Ask for line numbers */
-    this.updateLineNumbers();
-    this.handleScroll(window.innerHeight);
   }
 
   /** Whether the editor is frozen, see {@linkcode freeze}. */
