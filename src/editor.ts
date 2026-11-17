@@ -67,9 +67,19 @@ import {
 } from "./commands/insert-command";
 import { InsertionPlace } from "./commands";
 import { deleteSelection } from "./commands/commands";
+
 import { Mapping } from "./mapping";
 import { ProgressBar } from "./progressBar";
 import { studentHiddenPlugin } from "./student-hidden";
+
+/** The cursor and scroll position of the editor, kept when the view is rebuilt. */
+interface ViewPosition {
+  scrollY: number;
+  hadFocus: boolean;
+  /** The selection, as text offsets. */
+  anchor?: number;
+  head?: number;
+}
 
 /** Type that contains a diagnostics object fit for use in the ProseMirror editor context. */
 export type DiagnosticObjectProse = {
@@ -135,6 +145,9 @@ export class WaterproofEditor implements MessageHandlerEditor {
 
   private _lineNumbersShown: boolean = false;
 
+  /** Whether the document is read-only until the next `init`, see {@linkcode freeze}. */
+  private _frozen = false;
+
   private readonly _serializer: DocumentSerializer;
 
   private readonly _progressBar;
@@ -167,14 +180,27 @@ export class WaterproofEditor implements MessageHandlerEditor {
     this._progressBar = new ProgressBar(editorElement);
   }
 
-  init(content: string, version: number = 1) {
-    // Initialize the file translator given the fileformat.
+  /**
+   * Show `content`, building a new ProseMirror view. This also lifts a {@linkcode freeze}.
+   *
+   * When a view exists already, the cursor and the scroll position are kept (as far as they
+   * still exist in the new content), but the undo history is cleared.
+   * @param content The content of the document.
+   * @param version The version of the document that `content` belongs to.
+   * @param force Rebuild the view even when `version` equals the version of the current
+   *   content. By default this is skipped, assuming the view shows that version already.
+   */
+  init(content: string, version: number = 1, force = false) {
+    let position: ViewPosition | undefined;
     if (this._view) {
-      if (this._mapping?.version == version) return;
+      if (!force && this._mapping?.version == version) return;
+      position = this.viewPosition();
       // Hack to forcefully remove the 'old' menubar
       document.querySelector(".progress-bar")?.remove();
+      this._view.destroy();
       this._view.dom.remove();
     }
+    this._frozen = false;
 
     const blocks = this._editorConfig.documentConstructor(content);
     const proseDoc = constructDocument(blocks);
@@ -186,6 +212,7 @@ export class WaterproofEditor implements MessageHandlerEditor {
       this._serializer,
     );
     this.createProseMirrorEditor(proseDoc);
+    if (position) this.restoreViewPosition(position);
 
     /** Ask for line numbers */
     this.updateLineNumbers();
@@ -222,6 +249,72 @@ export class WaterproofEditor implements MessageHandlerEditor {
     this.handleScroll(window.innerHeight);
   }
 
+  /** Whether the editor is frozen, see {@linkcode freeze}. */
+  public get isFrozen(): boolean {
+    return this._frozen;
+  }
+
+  /**
+   * Make the document read-only until the next {@linkcode init}. While frozen, the user can't
+   * edit the document and transactions that change it are dropped, so no further changes are
+   * sent to the host. A host uses this to replace the content safely: once the editor is
+   * frozen, every change it made has been sent.
+   */
+  public freeze(): void {
+    this._frozen = true;
+    if (!this._view) return;
+    // Re-evaluate the `editable` prop, and make the code cells follow it.
+    this._view.setProps({});
+    const codeViews = CODE_PLUGIN_KEY.getState(
+      this._view.state,
+    )?.activeNodeViews;
+    for (const codeView of codeViews ?? []) codeView.setEditPermission();
+  }
+
+  /** The cursor and scroll position, in terms that survive rebuilding the view. */
+  private viewPosition(): ViewPosition {
+    const position: ViewPosition = {
+      scrollY: window.scrollY,
+      hadFocus: this._view?.hasFocus() ?? false,
+    };
+    const selection = this._view?.state.selection;
+    if (selection && this._mapping) {
+      try {
+        position.anchor = this._mapping.pmIndexToTextOffset(selection.anchor);
+        position.head = this._mapping.pmIndexToTextOffset(selection.head);
+      } catch {
+        // The selection is not in text, e.g. a node selection; don't restore it.
+      }
+    }
+    return position;
+  }
+
+  /** Restore a position taken with {@linkcode viewPosition} after the view was rebuilt. */
+  private restoreViewPosition(position: ViewPosition): void {
+    const view = this._view;
+    if (!view || !this._mapping) return;
+    if (position.anchor !== undefined && position.head !== undefined) {
+      try {
+        const doc = view.state.doc;
+        const clamp = (pos: number) =>
+          Math.max(0, Math.min(pos, doc.content.size));
+        const anchor = clamp(
+          this._mapping.textOffsetToPmIndex(position.anchor),
+        );
+        const head = clamp(this._mapping.textOffsetToPmIndex(position.head));
+        view.dispatch(
+          view.state.tr.setSelection(
+            TextSelection.between(doc.resolve(anchor), doc.resolve(head)),
+          ),
+        );
+      } catch {
+        // The offsets don't exist in the new content; keep the default selection.
+      }
+    }
+    if (position.hadFocus) view.focus();
+    window.scrollTo(window.scrollX, position.scrollY);
+  }
+
   private get state(): EditorState | undefined {
     return this._view?.state;
   }
@@ -234,7 +327,11 @@ export class WaterproofEditor implements MessageHandlerEditor {
       clipboardTextSerializer: (slice) => {
         return mathSerializer.serializeSlice(slice);
       },
+      editable: () => !this._frozen,
       dispatchTransaction: (tr) => {
+        // While frozen, the document must not change: the host relies on the editor not
+        // sending further changes (see `freeze`).
+        if (this._frozen && tr.docChanged) return;
         // Called on every transaction.
         // Reset _currentDoc so stale state from a previous (possibly failed)
         // transaction cannot bleed into this one.
@@ -687,6 +784,7 @@ export class WaterproofEditor implements MessageHandlerEditor {
     edit: OffsetEdit,
     options: { requireEditable?: boolean } = {},
   ): boolean {
+    if (this._frozen) return false;
     const range = this.positionEdit(edit, options);
     if (!this._view || !range) {
       console.warn("Not applying edit: it no longer applies to the document.");

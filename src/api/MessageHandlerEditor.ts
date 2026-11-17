@@ -9,7 +9,8 @@ import type { InputAreaStatus } from "./InputAreaStatus";
  * messages to an editor instance and should depend on the editor's public API.
  */
 export interface MessageHandlerEditor {
-  init: (value: string, version: number) => void;
+  init: (value: string, version: number, force?: boolean) => void;
+  freeze: () => void;
   insertSymbol: (symbolUnicode: string) => boolean;
   handleSnippet: (template: string) => void;
   replaceRange: (start: number, end: number, text: string) => boolean;
